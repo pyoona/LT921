@@ -321,12 +321,12 @@
 
     /* วันที่ในหัวข้อสรุป: จอใหญ่ซ่อนไว้ เพราะปุ่มปฏิทินแสดงวันที่อยู่แล้ว */
     @media (min-width: 769px) {
-      /* จอคอม: แถบด้านบน "Lotto941 + ล่าสุด / สถิติ 7 วัน / สรุป" อยู่บรรทัดเดียวกัน */
+      /* จอคอม: แถบด้านบน "LT921 + ล่าสุด / สถิติ 7 วัน / สรุป" อยู่บรรทัดเดียวกัน */
       .mobile-header { display: flex; justify-content: flex-start; padding: 0; height: 56px; }
       .mobile-header .brand { width: 240px; text-align: center; font-size: 1.3em; }
       .mobile-header .header-actions { margin-left: 20px; }
       .mobile-header .cal-wrap, .mobile-header .menu-toggle { display: none !important; }
-      /* ปุ่มอัปเดต: ย้ายขึ้นไปแถบด้านบน ต่อจาก Lotto941 */
+      /* ปุ่มอัปเดต: ย้ายขึ้นไปแถบด้านบน ต่อจาก LT921 */
       .desktop-action-buttons .update-all-btn { display: none !important; }
       .mobile-header .btn-update { padding: 7px 16px; font-size: 0.9em; margin-right: 6px; display: inline-flex !important; }
       .nav-btns { display: flex; gap: 10px; }
@@ -543,7 +543,7 @@
 <body>
 
   <div class="mobile-header">
-    <div class="brand">Lotto941</div>
+    <div class="brand">LT921</div>
     <div class="header-actions">
       <!-- ปุ่มอัปเดตบนมือถือ -->
       <button class="btn-update update-all-btn" onclick="executeUpdateAll()">
@@ -565,7 +565,7 @@
   <div class="overlay" id="overlay" onclick="closeSidebar()"></div>
 
   <div class="sidebar" id="sidebar">
-    <div class="header">Lotto941</div>
+    <div class="header">LT921</div>
     
     <div class="menu-item nav-main" style="background-color: var(--orange-accent); color: var(--text-dark);" onclick="showLatestResults()">
       <span style="font-weight: 600;">⭐ ล่าสุด</span>
