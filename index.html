@@ -611,8 +611,8 @@
   <script>
     // ===== ตัวเชื่อมกับ Supabase (แทน Code.gs เดิม) =====
     // ใส่ค่าจาก Supabase > Project Settings > API  (ใช้ anon / publishable key เท่านั้น ห้ามใช้ service_role)
-    const SUPABASE_URL = 'https://YOUR-PROJECT.supabase.co';
-    const SUPABASE_KEY = 'YOUR-ANON-KEY';
+    const SUPABASE_URL = 'https://tfjgmbawsbyjgkdcuewb.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRmamdtYmF3c2J5amdrZGN1ZXdiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI2ODI3MTQsImV4cCI6MjEwODI1ODcxNH0.CWPUt-KUWWVAOmP93nwLuw9PJ3-27qPfIY6rPhzEPOk';
     const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
     const fmtDate = iso => { const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}`; };
