@@ -323,13 +323,24 @@
     .mobile-header .cal-wrap { display: none !important; }
     .sum-date-pager { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
     body:not(.view-summary) .sum-date-pager { display: none !important; }
+    @media (min-width: 769px) and (max-width: 1366px) {
+      .date-tabs .lbl-full { display: none; }
+      .date-tabs .lbl-short { display: inline; }
+      .date-tabs { gap: 6px; }
+      .date-tabs .date-btn { padding: 6px 12px; font-size: 0.85em; }
+    }
+    @media (min-width: 769px) and (max-width: 900px) {
+      .date-tabs .lbl-short { display: none; }
+      .date-tabs .lbl-day { display: inline; }
+      .date-tabs .date-btn { min-width: 42px; padding: 6px 10px; }
+    }
     @media (max-width: 768px) {
       #result-count .sum-today-btn { display: none; }   /* มือถือใช้ปุ่ม ▶ กลับวันนี้แทน */
       #content-title .title-date { display: none; }      /* มือถือไม่แสดงวันที่ข้างหัวข้อ (ดูจากปุ่มศรแทน) */
       /* ล็อกแถบเลือกวันที่ให้อยู่ใต้แถบด้านบนตอนเลื่อนจอ */
       .view-summary .content-header-container,
       .date-tabs {
-        position: sticky; top: 50px; z-index: 900;
+        position: sticky; top: 50px; z-index: 800;   /* ต่ำกว่าเมนู ☰ และแผ่นหรี่จอ (850) */
         background-color: var(--bg-color);
       }
       .view-summary .content-header-container { padding: 6px 0; margin-bottom: 0; }
@@ -378,6 +389,17 @@
       .sum-date-tabs { display: flex; gap: 6px; }
       .sum-date-pager { display: none; }
       .sum-date-tabs .date-btn { padding: 6px 10px; font-size: 0.8em; }
+      /* ปุ่มวันที่อยู่แถวเดียวเสมอ: จอใหญ่ = วันที่เต็ม, แท็บเล็ต = 02/11, แท็บเล็ตแนวตั้ง = 02 */
+      .date-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+      .date-tabs::-webkit-scrollbar { display: none; }
+      .date-tabs .date-btn { flex-shrink: 0; }
+      .lbl-short, .lbl-day { display: none; }
+      /* จอคอม/แท็บเล็ต: ล็อกแถบวันที่ไว้ใต้แถบด้านบนตอนเลื่อนจอ */
+      .date-tabs {
+        position: sticky; top: 56px; z-index: 800;   /* ต่ำกว่าเมนู ☰ และแผ่นหรี่จอ (850) */
+        background-color: var(--bg-color);
+        padding: 10px 0; margin-top: 5px; margin-bottom: 0;
+      }
       .desktop-action-buttons .cal-wrap { display: none !important; }  /* จอคอมใช้ปุ่มวันที่แทนปฏิทิน */
       .sum-desktop { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0 24px; }
       .sum-desktop .table-wrapper { margin-top: 10px; }
@@ -1218,8 +1240,8 @@
       const active = summaryDate || today;
       const dates = historyCache.dates;   // ใหม่สุดอยู่ index 0
       if (box) box.innerHTML = dates.map((dStr, idx) => {
-        const label = (idx === 0) ? `📅 ${dStr} (ล่าสุด)` : `📅 ${dStr}`;
-        return `<button class="date-btn ${dStr === active ? 'active' : ''}" onclick="pickSummaryDate('${dStr}')">${label}</button>`;
+        const labelDesktop = (idx === 0) ? `📅 ${dStr} (ล่าสุด)` : `📅 ${dStr}`;
+        return `<button class="date-btn ${dStr === active ? 'active' : ''}" onclick="pickSummaryDate('${dStr}')"><span class="lbl-full">${labelDesktop}</span><span class="lbl-short">${dStr.slice(0,5)}</span><span class="lbl-day">${dStr.slice(0,2)}</span></button>`;
       }).join('');
 
       // มือถือ: ◀ = ย้อนไปวันก่อนหน้า, ▶ = วันถัดไป (ใหม่กว่า)
@@ -1430,7 +1452,7 @@
         let labelDesktop = (idx === 0) ? `📅 ${dStr} (ล่าสุด)` : `📅 ${dStr}`;
         
         tabsHtml += `<button class="date-btn ${isActive}" onclick="switchHistoryDate('${dStr}')">
-                   <span class="desktop-text">${labelDesktop}</span>
+                   <span class="desktop-text"><span class="lbl-full">${labelDesktop}</span><span class="lbl-short">${dStr.slice(0,5)}</span><span class="lbl-day">${dStr.slice(0,2)}</span></span>
                    <span class="mobile-text">${dayOnly}</span>
                  </button>`;
       });
