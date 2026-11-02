@@ -323,7 +323,10 @@
     .mobile-header .cal-wrap { display: none !important; }
     .sum-date-pager { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
     body:not(.view-summary) .sum-date-pager { display: none !important; }
-    @media (max-width: 768px) { #result-count .sum-today-btn { display: none; } }  /* มือถือใช้ปุ่ม ▶ กลับวันนี้แทน */
+    @media (max-width: 768px) {
+      #result-count .sum-today-btn { display: none; }   /* มือถือใช้ปุ่ม ▶ กลับวันนี้แทน */
+      #content-title .title-date { display: none; }      /* มือถือไม่แสดงวันที่ข้างหัวข้อ (ดูจากปุ่มศรแทน) */
+    }
     .sum-date-pager .pg-arrow {
       width: 42px; height: 38px; border-radius: 19px; border: 1.5px solid var(--primary-color); padding: 0;
       background: #fff; color: var(--text-dark); font-size: 1.15em; font-weight: 700; cursor: pointer;
