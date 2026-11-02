@@ -318,6 +318,24 @@
     .sum-row.in-sec td:first-child { padding-left: 40px !important; }
     .nl-full { display: none; }
     .sum-desktop { display: none; }
+    .sum-date-tabs { display: none; }
+    /* มือถือ: ปุ่มศร ◀ วันที่ ▶ ในหน้าสรุป (แทนปฏิทิน) */
+    .mobile-header .cal-wrap { display: none !important; }
+    .sum-date-pager { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
+    body:not(.view-summary) .sum-date-pager { display: none !important; }
+    @media (max-width: 768px) { #result-count .sum-today-btn { display: none; } }  /* มือถือใช้ปุ่ม ▶ กลับวันนี้แทน */
+    .sum-date-pager .pg-arrow {
+      width: 42px; height: 38px; border-radius: 19px; border: 1.5px solid var(--primary-color); padding: 0;
+      background: #fff; color: var(--text-dark); font-size: 1.15em; font-weight: 700; cursor: pointer;
+      touch-action: manipulation;   /* แตะติดกันเร็วๆ ไม่ซูมหน้าจอ */
+    }
+    .sum-date-pager .pg-arrow:disabled { opacity: 0.3; cursor: default; }
+    .sum-date-pager .pg-date {
+      min-width: 46px; text-align: center; padding: 6px 10px; border-radius: 19px;
+      background: #3498db; border: 1.5px solid #2980b9; color: #fff; font-weight: 700; font-size: 1.1em;
+      box-shadow: 0 2px 6px rgba(52, 152, 219, 0.35);
+    }
+    .sum-date-pager .pg-date small { display: block; font-size: 0.75em; font-weight: 400; opacity: 0.9; }
 
     /* วันที่ในหัวข้อสรุป: จอใหญ่ซ่อนไว้ เพราะปุ่มปฏิทินแสดงวันที่อยู่แล้ว */
     @media (min-width: 769px) {
@@ -346,6 +364,10 @@
       .view-summary .table-wrapper { max-width: 560px; }
       /* สรุปบนจอคอม: 3 ตารางเรียงกันในแนวนอน */
       .sum-mobile { display: none; }
+      .sum-date-tabs { display: flex; gap: 6px; }
+      .sum-date-pager { display: none; }
+      .sum-date-tabs .date-btn { padding: 6px 10px; font-size: 0.8em; }
+      .desktop-action-buttons .cal-wrap { display: none !important; }  /* จอคอมใช้ปุ่มวันที่แทนปฏิทิน */
       .sum-desktop { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0 24px; }
       .sum-desktop .table-wrapper { margin-top: 10px; }
       .sum-desktop .sum-main { flex: 0 1 560px; }
@@ -592,6 +614,7 @@
       <h2 id="content-title">⭐ ล่าสุด</h2>
       <span id="result-count" class="result-count"></span>
       <span id="dup-count" class="dup-count"></span>
+      <span id="sum-date-pager" class="sum-date-pager"></span>
       <div class="action-buttons desktop-action-buttons">
         <button class="btn-update update-all-btn" onclick="executeUpdateAll()">
           <span class="spin-icon">⚡</span> อัปเดตข้อมูล
@@ -661,7 +684,7 @@
       },
 
       async get7DaysHistory() {
-        const dates = await latestDates_(7);                         // ใหม่สุดขึ้นก่อน
+        const dates = await latestDates_(10);                        // ใหม่สุดขึ้นก่อน (สรุปจอคอมใช้ 10 วัน, สถิติใช้ 7 วันแรก)
         const lots = await getLots_();
         const rows = dates.length ? must(await db.from('results')
           .select('draw_date, lottery_id, result').in('draw_date', dates)) : [];
@@ -1152,7 +1175,7 @@
       if (historyCache || historyPreloading) return;
       historyPreloading = true;
       google.script.run
-        .withSuccessHandler(res => { historyPreloading = false; if (!historyCache) historyCache = res; })
+        .withSuccessHandler(res => { historyPreloading = false; if (!historyCache) historyCache = res; drawSummaryDateTabs(); })
         .withFailureHandler(() => { historyPreloading = false; })
         .get7DaysHistory();
     }
@@ -1175,6 +1198,36 @@
       showSummary();
     }
 
+    // ===== จอคอม: ปุ่มเลือกวันที่ 10 วันในหน้าสรุป (แบบเดียวกับหน้า "สถิติ 7 วัน") =====
+    function drawSummaryDateTabs() {
+      const box = document.getElementById('sum-date-tabs');
+      if (currentView !== 'summary') return;
+      if (!historyCache || !historyCache.dates) { preloadHistoryForCalendar(); return; }
+      const today = summaryTodayStrBKK();
+      const active = summaryDate || today;
+      const dates = historyCache.dates;   // ใหม่สุดอยู่ index 0
+      if (box) box.innerHTML = dates.map((dStr, idx) => {
+        const label = (idx === 0) ? `📅 ${dStr} (ล่าสุด)` : `📅 ${dStr}`;
+        return `<button class="date-btn ${dStr === active ? 'active' : ''}" onclick="pickSummaryDate('${dStr}')">${label}</button>`;
+      }).join('');
+
+      // มือถือ: ◀ = ย้อนไปวันก่อนหน้า, ▶ = วันถัดไป (ใหม่กว่า)
+      const pager = document.getElementById('sum-date-pager');
+      if (!pager) return;
+      const idx = dates.indexOf(active);              // -1 = วันนี้ที่ยังไม่มีในรายการ
+      const older = idx < 0 ? (dates[0] !== active ? dates[0] : null) : (dates[idx + 1] || null);
+      const newer = idx > 0 ? dates[idx - 1] : (idx === 0 || active === today ? null : today);
+      pager.innerHTML =
+        `<button class="pg-arrow" ${older ? `onclick="pickSummaryDate('${older}')"` : 'disabled'} aria-label="วันก่อนหน้า">◀</button>` +
+        `<span class="pg-date" title="${active}">${active.split('/')[0]}</span>` +
+        `<button class="pg-arrow" ${newer ? `onclick="pickSummaryDate('${newer}')"` : 'disabled'} aria-label="วันถัดไป">▶</button>`;
+    }
+
+    function pickSummaryDate(dStr) {
+      summaryDate = (dStr === summaryTodayStrBKK()) ? null : dStr;
+      showSummary();
+    }
+
     function resetSummaryToday() {
       summaryDate = null;
       showSummary();
@@ -1188,9 +1241,11 @@
       const data = res && res.dataByDate ? res.dataByDate[summaryDate] : null;
       if (!data || Object.keys(data).length === 0) {
         const avail = (res && res.dates && res.dates.length) ? ` (มีข้อมูลย้อนหลัง: ${res.dates[res.dates.length - 1]} – ${res.dates[0]})` : '';
-        container.innerHTML = `<p style="color:red; font-size:0.85em;">ไม่พบข้อมูลของวันที่ ${summaryDate}${avail}</p>` +
+        container.innerHTML = `<div id="sum-date-tabs" class="date-tabs sum-date-tabs"></div>` +
+          `<p style="color:red; font-size:0.85em;">ไม่พบข้อมูลของวันที่ ${summaryDate}${avail}</p>` +
           `<button class="sum-today-btn" onclick="resetSummaryToday()">กลับวันนี้</button>`;
         updateButtonVisibility();
+        drawSummaryDateTabs();
         return;
       }
       renderSummary(data, null);
@@ -1273,6 +1328,7 @@
       const idxOf = sec => SUMMARY_GROUPS.map((g, i) => (g.section || null) === sec ? i : -1).filter(i => i >= 0);
 
       container.innerHTML =
+        `<div id="sum-date-tabs" class="date-tabs sum-date-tabs"></div>` +
         `<div class="sum-mobile"><div class="table-wrapper"><table class="sum-table"><thead><tr><th>รายการ</th><th>รวม</th></tr></thead><tbody>${rows}</tbody></table></div></div>` +
         `<div class="sum-desktop">${deskTable('รายการ', 'sum-main', idxOf(null))}${deskTable('DB', 'sum-side', idxOf('DB'))}${deskTable('2 บน', 'sum-side', idxOf('2 บน'))}</div>`;
 
@@ -1280,6 +1336,7 @@
       document.getElementById('result-count').innerHTML = summaryDate
         ? `${outCount} รายการ <button class="sum-today-btn" onclick="resetSummaryToday()">กลับวันนี้</button>`
         : `ผลที่ออกแล้ว ${outCount} รายการ`;
+      drawSummaryDateTabs();
 
       // กดหัวกลุ่ม -> ขยาย/ย่อรายการในกลุ่ม
       container.querySelectorAll('tr.sum-sec').forEach(h => {
@@ -1356,7 +1413,7 @@
       const container = document.getElementById('table-container');
       
       let tabsHtml = '<div class="date-tabs">';
-      historyCache.dates.forEach((dStr, idx) => {
+      historyCache.dates.slice(0, 7).forEach((dStr, idx) => {   // หน้าสถิติแสดง 7 วัน
         let isActive = (dStr === currentHistoryDate) ? 'active' : '';
         let dayOnly = dStr.split('/')[0]; 
         let labelDesktop = (idx === 0) ? `📅 ${dStr} (ล่าสุด)` : `📅 ${dStr}`;
