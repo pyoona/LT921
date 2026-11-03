@@ -8,6 +8,9 @@
   <!-- ไอคอนของเว็บ (แสดงในรายการโปรด / แท็บ / หน้าจอหลัก) -->
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%2327ae60'/%3E%3Cg fill='none' stroke='%23ffffff' stroke-linecap='round' stroke-linejoin='round' stroke-width='2.6'%3E%3Cpath d='M18,53 V14 H34 A12,12 0 0 1 34,38 H30'/%3E%3Cpath d='M22,53 V18 H34 A8,8 0 0 1 34,34 H30'/%3E%3Cpath d='M26,53 V22 H34 A4,4 0 0 1 34,30 H26'/%3E%3C/g%3E%3Ccircle cx='22' cy='8' r='2.6' fill='%23ffffff'/%3E%3C/svg%3E">
   <meta name="theme-color" content="#a8e6cf">
+  <link rel="preconnect" href="https://tfjgmbawsbyjgkdcuewb.supabase.co" crossorigin>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
@@ -663,66 +666,84 @@
     <div id="table-container"></div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
   <script>
     // ===== ตัวเชื่อมกับ Supabase (แทน Code.gs เดิม) =====
     // ใส่ค่าจาก Supabase > Project Settings > API  (ใช้ anon / publishable key เท่านั้น ห้ามใช้ service_role)
     const SUPABASE_URL = 'https://tfjgmbawsbyjgkdcuewb.supabase.co';
     const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRmamdtYmF3c2J5amdrZGN1ZXdiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI2ODI3MTQsImV4cCI6MjEwODI1ODcxNH0.CWPUt-KUWWVAOmP93nwLuw9PJ3-27qPfIY6rPhzEPOk';
-    const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
     const fmtDate = iso => { const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}`; };
-    const must = ({ data, error }) => { if (error) throw new Error(error.message); return data; };
 
-    let lotsCache_ = null;
-    async function getLots_() {
-      if (!lotsCache_) lotsCache_ = must(await db.from('lotteries').select('*').order('sort_order'));
-      return lotsCache_;
+    // เรียกฟังก์ชันในฐานข้อมูลด้วย fetch ตรงๆ (ไม่ต้องโหลดไลบรารี supabase-js)
+    // แบบแรก: ส่ง key ใน URL = คำขอแบบง่าย เบราว์เซอร์ไม่ต้องถามสิทธิ์ล่วงหน้า (เร็วกว่า 1 รอบ)
+    // ถ้าใช้ไม่ได้ จะสลับไปส่ง key ใน header แทน และจำไว้ใช้ครั้งต่อไป
+    async function rpc_(fn, params) {
+      const qs = new URLSearchParams(params || {});
+      const base = SUPABASE_URL + '/rest/v1/rpc/' + fn;
+      let viaHeader = false;
+      try { viaHeader = localStorage.getItem('lt921:auth') === 'header'; } catch (e) { /* ไม่เป็นไร */ }
+      if (!viaHeader) {
+        qs.set('apikey', SUPABASE_KEY);
+        const r = await fetch(base + '?' + qs);
+        if (r.ok) return r.json();
+        if (r.status !== 401 && r.status !== 403) throw new Error('HTTP ' + r.status + ' ' + (await r.text()).slice(0, 200));
+        try { localStorage.setItem('lt921:auth', 'header'); } catch (e) { /* ไม่เป็นไร */ }
+        qs.delete('apikey');
+      }
+      const r = await fetch(base + '?' + qs, { headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY } });
+      if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + (await r.text()).slice(0, 200));
+      return r.json();
     }
-    async function latestDates_(n) {
-      return must(await db.from('draw_dates').select('draw_date')
-        .order('draw_date', { ascending: false }).limit(n)).map(r => r.draw_date);
+
+    // ข้อมูลชุดเดียวสำหรับ เมนู / ล่าสุด / 7 วัน / สรุป (ถามฐานข้อมูลครั้งเดียว ใช้ร่วมกันทุกหน้า)
+    // ใช้ซ้ำได้ 20 วินาที แล้วค่อยถามใหม่ เพื่อให้ปุ่มรีเฟรชได้ข้อมูลล่าสุด
+    let bundle_ = null, bundleAt_ = 0;
+    function getBundle_() {
+      if (!bundle_ || Date.now() - bundleAt_ > 20000) {
+        bundleAt_ = Date.now();
+        bundle_ = rpc_('get_lotto_data', { days: 10 }).then(j => {
+          const lots = j.lotteries.map(([id, category, name]) => ({ id, category, name }));
+          const map = {};
+          j.results.forEach(([d, id, r]) => { map[d + '|' + id] = r; });
+          return { lots, dates: j.dates, map };
+        }).catch(e => { bundle_ = null; throw e; });
+      }
+      return bundle_;
     }
 
     // ---- ฟังก์ชันชื่อเดิมทั้งหมด คืนค่ารูปแบบเดียวกับ Code.gs ----
     const API = {
       async getMenuData() {
+        const { lots } = await getBundle_();
         const menu = {};
-        (await getLots_()).forEach(l => (menu[l.category] ||= []).push({ name: l.name, colIndex: l.id }));
+        lots.forEach(l => (menu[l.category] ||= []).push({ name: l.name, colIndex: l.id }));
         return menu;
       },
 
       // colIndex = lotteries.id
       async getTableData(colIndex) {
-        const dates = (await latestDates_(20)).reverse();          // เก่าสุดขึ้นก่อน
-        if (!dates.length) return [];
-        const rows = must(await db.from('results').select('draw_date, result')
-          .eq('lottery_id', colIndex).in('draw_date', dates));
-        const map = Object.fromEntries(rows.map(r => [r.draw_date, r.result]));
-        return dates.map(d => ({ dateVal: new Date(d).getTime(), date: fmtDate(d), value: map[d] ?? '-' }));
+        const j = await rpc_('get_lotto_table', { lid: colIndex, days: 20 });
+        const map = Object.fromEntries(j.results.map(([d, r]) => [d, r]));
+        return j.dates.slice().reverse()                               // เก่าสุดขึ้นก่อน
+          .map(d => ({ dateVal: new Date(d).getTime(), date: fmtDate(d), value: map[d] ?? '-' }));
       },
 
       async getLatestResults() {
         const exclude = ['หุ้นดาวน์โจนส์', 'ดาวน์โจนส์ MIDNIGHT', 'ดาวน์โจนส์ EXTRA', 'ดาวน์โจนส์ TV'];
-        const [maxDate] = await latestDates_(1);
+        const { lots, dates, map } = await getBundle_();
+        const maxDate = dates[0];
         if (!maxDate) return {};
-        const rows = must(await db.from('results').select('lottery_id, result').eq('draw_date', maxDate));
-        const map = Object.fromEntries(rows.map(r => [r.lottery_id, r.result]));
         const out = {};
-        (await getLots_()).forEach(l => {
-          if (exclude.includes(l.name) || map[l.id] == null) return;
-          (out[l.category] ||= []).push({ name: l.name, date: fmtDate(maxDate), value: map[l.id] });
+        lots.forEach(l => {
+          const v = map[maxDate + '|' + l.id];
+          if (exclude.includes(l.name) || v == null) return;
+          (out[l.category] ||= []).push({ name: l.name, date: fmtDate(maxDate), value: v });
         });
         return out;
       },
 
       async get7DaysHistory() {
-        const dates = await latestDates_(10);                        // ใหม่สุดขึ้นก่อน (สรุปจอคอมใช้ 10 วัน, สถิติใช้ 7 วันแรก)
-        const lots = await getLots_();
-        const rows = dates.length ? must(await db.from('results')
-          .select('draw_date, lottery_id, result').in('draw_date', dates)) : [];
-        const map = {};
-        rows.forEach(r => { map[r.draw_date + '|' + r.lottery_id] = r.result; });
+        const { lots, dates, map } = await getBundle_();               // ใหม่สุดขึ้นก่อน (สรุปจอคอมใช้ 10 วัน, สถิติใช้ 7 วันแรก)
         const dataByDate = {};
         dates.forEach(d => {
           const key = fmtDate(d), byCat = (dataByDate[key] = {});
@@ -735,11 +756,23 @@
 
       // ปุ่ม "อัปเดต" → เรียก Edge Function ที่ดึงผลจากเว็บต้นทาง
       async runUpdateAll() {
-        const { data, error } = await db.functions.invoke('update-lotto');
-        if (error) throw new Error(error.message);
-        return data;
+        const r = await fetch(SUPABASE_URL + '/functions/v1/update-lotto', {
+          method: 'POST',
+          headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY, 'Content-Type': 'application/json' },
+          body: '{}',
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || j.success === false) throw new Error(j.error || ('HTTP ' + r.status));
+        bundle_ = null;                                                // ให้หน้าเว็บโหลดผลใหม่หลังอัปเดต
+        return j;
       }
     };
+
+    // ===== จำข้อมูลครั้งก่อนไว้ในเครื่องผู้ชม: เปิดเว็บใหม่จะเห็นข้อมูลทันที แล้วค่อยอัปเดตเป็นข้อมูลล่าสุด =====
+    // 'once' = ใช้ของเดิมเลย (เมนู), 'refresh' = แสดงของเดิมก่อน แล้วแทนด้วยของใหม่ถ้าเปลี่ยน
+    const CACHE_MODE_ = { getMenuData: 'once', getLatestResults: 'refresh', get7DaysHistory: 'refresh', getTableData: 'refresh' };
+    function cacheGet_(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } }
+    function cacheSet_(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* โหมดส่วนตัว ฯลฯ */ } }
 
     // จำลอง google.script.run ให้โค้ดหน้าเว็บเดิมใช้ต่อได้โดยไม่ต้องแก้
     window.google = { script: { get run() {
@@ -757,7 +790,15 @@
         if (name === 'withFailureHandler') return f => { fail = f; return p; };
         return (...args) => {
           if (!API[name]) return fail(new Error('unknown function: ' + name));
-          API[name](...args).then(ok).catch(fail);
+          const mode = CACHE_MODE_[name];
+          const key = 'lt921:' + name + ':' + JSON.stringify(args);
+          const cached = mode ? cacheGet_(key) : null;
+          if (cached) ok(cached);                     // แสดงข้อมูลจากครั้งก่อนทันที
+          API[name](...args).then(fresh => {
+            if (mode) cacheSet_(key, fresh);
+            // แสดงข้อมูลใหม่ เมื่อยังไม่เคยแสดง หรือข้อมูลเปลี่ยน (เมนูแสดงครั้งเดียว ไม่ซ้ำ)
+            if (!cached || (mode === 'refresh' && JSON.stringify(fresh) !== JSON.stringify(cached))) ok(fresh);
+          }).catch(e => { if (cached) console.warn('ใช้ข้อมูลเดิมไปก่อน:', e); else fail(e); });
         };
       }});
       return p;
@@ -1208,7 +1249,7 @@
       if (historyCache || historyPreloading) return;
       historyPreloading = true;
       google.script.run
-        .withSuccessHandler(res => { historyPreloading = false; if (!historyCache) historyCache = res; drawSummaryDateTabs(); })
+        .withSuccessHandler(res => { historyPreloading = false; historyCache = res; drawSummaryDateTabs(); })
         .withFailureHandler(() => { historyPreloading = false; })
         .get7DaysHistory();
     }
