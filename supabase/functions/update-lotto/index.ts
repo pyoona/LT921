@@ -411,6 +411,7 @@ const TASKS = {
   russiavip:  { window: ['23:50', '00:15', 'excl'], fn: taskRussiaVip_ },
   stockdj:    { window: ['04:30', '06:00', 'excl'], fn: taskStockDowJones_ },
   djvisa:     { window: ['00:15', '00:20', 'incl'], fn: taskDowJonesVisa_ },
+  index:      { window: null,                       fn: taskIndex_ },       // ดัชนีจริง (GoogleFinance.gs) เช็กช่วงเวลาเองข้างใน
   stockslate: { window: null,                       fn: taskStocksLate_ },  // เช็กช่วงเวลาเองข้างใน
 };
 
@@ -539,6 +540,130 @@ async function taskDowJonesVisa_(db) {
   return save_(db, 'ดาวน์โจนส์ VISA', target, digits.slice(-3), true);
 }
 
+/* ===================================================================
+ * ดัชนีจริง (ย้ายมาจาก GoogleFinance.gs)
+ *   หุ้นเยอรมัน -> DAX       (Google Finance  DAX:INDEXDB)   23:50–00:30
+ *   หุ้นอังกฤษ -> FTSE 100  (Google Finance  UKX:INDEXFTSE) 23:50–00:30
+ *   หุ้นรัสเซีย -> RUSBC     (TradingView     RUS:RUSBC)     04:30–05:30
+ *   เลข = 3 ตัวท้ายของค่าดัชนี ไม่เอาจุด (25,981.09 -> 109)
+ *   กติกาเหมือนเดิม: ลงวันที่ของรอบตลาด, ข้ามเสาร์-อาทิตย์, ค่าเท่ารอบก่อน = วันหยุด, ไม่ทับเลขเดิม
+ *   ทดสอบทันที: ?task=index&force=1  (ไม่สนช่วงเวลา แต่ยังข้ามตอนตลาดเปิด/วันหยุด และไม่ทับเลขเดิม)
+ * =================================================================== */
+
+const IDX = {
+  ITEMS: [
+    // shiftMin = เวลาปิดตลาด (เวลาไทย) เป็นนาที ใช้หาว่าค่าตอนนี้เป็นของรอบวันไหน
+    // open = ช่วงที่ตลาดเปิด (เวลาไทย) ตัวเลขยังขยับ จึงไม่ดึงในช่วงนี้
+    { name: 'หุ้นเยอรมัน', from: '23:50', to: '00:30', shiftMin: 23 * 60 + 35, open: ['14:00', '23:35'], get: () => googleFinancePrice_('DAX:INDEXDB') },
+    { name: 'หุ้นอังกฤษ', from: '23:50', to: '00:30', shiftMin: 23 * 60 + 35, open: ['14:00', '23:35'], get: () => googleFinancePrice_('UKX:INDEXFTSE') },
+    { name: 'หุ้นรัสเซีย', from: '04:30', to: '05:30', shiftMin: 28 * 60 + 25, open: ['13:00', '04:25'], get: () => tradingViewPrice_('RUS:RUSBC') },
+  ],
+};
+const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36';
+
+// วันที่ (yyyy-mm-dd) และวันในสัปดาห์ (0=อาทิตย์ ... 6=เสาร์) ตามเวลาไทย ของเวลา ms
+function bkkDay_(ms) {
+  const d = new Date(ms + 7 * 3600000);
+  return { date: d.toISOString().slice(0, 10), dow: d.getUTCDay() };
+}
+
+// 3 ตัวท้ายของค่า (ทศนิยม 2 ตำแหน่ง) ไม่เอาจุด: 25981.09 -> "109", 25980.05 -> "005"
+const toLast3_ = v => Number(v).toFixed(2).replace('.', '').slice(-3);
+
+async function taskIndex_(db, force) {
+  const hm = nowBkk_().slice(11, 16);
+  const items = force ? IDX.ITEMS : IDX.ITEMS.filter(it => inWindow_(hm, it.from, it.to, 'excl'));
+  if (!items.length) return 'นอกช่วงเวลา';
+
+  const out = [];
+  for (const it of items) {
+    try {
+      if (inWindow_(hm, it.open[0], it.open[1], 'excl')) {
+        out.push('… ' + it.name + ' ตลาดยังเปิดอยู่ (' + it.open[0] + '–' + it.open[1] + ') ตัวเลขยังไม่ใช่ราคาปิด -> ข้าม');
+        continue;
+      }
+      // วันที่ของรอบตลาด: ย้อนเวลาไทยตอนนี้ไปเท่ากับเวลาปิดตลาด
+      const session = bkkDay_(Date.now() - it.shiftMin * 60000);
+      const dateKey = session.date;
+      if (session.dow === 0 || session.dow === 6) { out.push('… ' + it.name + ' รอบ ' + dateKey + ' เป็นเสาร์/อาทิตย์ -> ข้าม'); continue; }
+
+      const id = await lotteryId_(db, it.name);
+      const { data: ex } = await db.from('results').select('result')
+        .eq('draw_date', dateKey).eq('lottery_id', id).maybeSingle();
+      const cur = ex ? String(ex.result).trim() : '';
+      if (cur !== '' && !force) { out.push('= ' + it.name + ' ' + dateKey + ' มีผลแล้ว (' + cur + ')'); continue; }
+
+      const value = await it.get();
+      const three = toLast3_(value);
+
+      // กันวันหยุด: ค่าเท่ากับรอบก่อนเป๊ะ = ตลาดไม่ได้เปิด (เก็บค่าล่าสุดไว้ในตาราง index_cache)
+      const { data: last, error: cacheErr } = await db.from('index_cache').select('date, value')
+        .eq('name', it.name).maybeSingle();
+      if (cacheErr) console.log('[index] อ่าน index_cache ไม่ได้ (ยังไม่ได้สร้างตาราง?): ' + cacheErr.message);
+      if (last && last.date !== dateKey && Number(last.value) === Number(value)) {
+        out.push('… ' + it.name + ' = ' + value + ' เท่ากับรอบ ' + last.date + ' (ตลาดน่าจะหยุด) -> ไม่เขียน');
+        continue;
+      }
+
+      if (cur === three) {
+        out.push('= ' + it.name + ' ' + dateKey + ' มีเลข ' + three + ' อยู่แล้ว');
+      } else if (cur === '') {
+        await save_(db, it.name, dateKey, three, false);
+        out.push('✓ ' + it.name + ' ' + dateKey + ' = ' + value + ' -> เขียน ' + three);
+      } else {
+        out.push('! ' + it.name + ' ' + dateKey + ': ในฐานข้อมูล=' + cur + ' ดัชนี=' + three + ' -> ไม่ทับ');
+      }
+      if (!cacheErr) await db.from('index_cache').upsert({ name: it.name, date: dateKey, value });
+    } catch (e) {
+      out.push('✗ ' + it.name + ' | ' + e.message);
+    }
+  }
+  return out;
+}
+
+/** Google Finance: อ่านราคาหลักจากหน้าเว็บ เช่น 'DAX:INDEXDB' */
+async function googleFinancePrice_(symbol) {
+  const res = await fetch('https://www.google.com/finance/quote/' + symbol + '?hl=en', {
+    headers: { 'User-Agent': BROWSER_UA, 'Accept-Language': 'en-US,en;q=0.9' },
+    signal: AbortSignal.timeout(20000),
+  });
+  if (res.status !== 200) throw new Error('Google Finance HTTP ' + res.status);
+  const html = await res.text();
+  const patterns = [
+    /class="N6SYTe"[^>]*>\s*<span[^>]*jsname="Pdsbrc"[^>]*>\s*<span[^>]*>\s*([0-9][0-9.,]*)\s*</, // ตัวเลขหลัก
+    /class="YMlKec fxKbKc"[^>]*>\s*[^0-9<]*([0-9][0-9.,]*)\s*</,                                     // class เดิม
+    /data-last-price="([0-9.,]+)"/,                                                                   // ตัวเลขดิบ
+  ];
+  for (const re of patterns) {
+    const m = html.match(re);
+    if (m) return Number(m[1].replace(/,/g, ''));
+  }
+  throw new Error('หาตัวเลขใน Google Finance ไม่เจอ (Google อาจเปลี่ยนหน้าเว็บ หรือขึ้นหน้ายืนยันคุกกี้)');
+}
+
+/** TradingView: ลอง scanner API ก่อน แล้วค่อยอ่านจากหน้าเว็บ เช่น 'RUS:RUSBC' */
+async function tradingViewPrice_(symbol) {
+  try {
+    const api = 'https://scanner.tradingview.com/symbol?symbol=' + encodeURIComponent(symbol) + '&fields=close&no_404=true';
+    const r = await fetch(api, { headers: { 'User-Agent': BROWSER_UA }, signal: AbortSignal.timeout(20000) });
+    const text = await r.text();
+    if (r.status === 200) {
+      const j = JSON.parse(text);
+      if (j && typeof j.close === 'number') return j.close;
+    }
+    console.log('[TradingView] scanner API ใช้ไม่ได้: HTTP ' + r.status + ' ' + text.slice(0, 120));
+  } catch (e) {
+    console.log('[TradingView] scanner API ใช้ไม่ได้: ' + e.message);
+  }
+  const res = await fetch('https://www.tradingview.com/symbols/' + symbol.replace(':', '-') + '/', {
+    headers: { 'User-Agent': BROWSER_UA }, signal: AbortSignal.timeout(20000),
+  });
+  if (res.status !== 200) throw new Error('TradingView HTTP ' + res.status);
+  const m = (await res.text()).match(/data-qa-id="symbol-last-value"[^>]*>\s*<span[^>]*>\s*([0-9][0-9.,]*)\s*</);
+  if (m) return Number(m[1].replace(/,/g, ''));
+  throw new Error('หาตัวเลขใน TradingView ไม่เจอ (โหลดตัวเลขด้วย JavaScript)');
+}
+
 /* ---------- หุ้นอังกฤษ / เยอรมัน / รัสเซีย (ประกาศหลังเที่ยงคืน) ---------- */
 async function taskStocksLate_(db, force) {
   const hm = nowBkk_().slice(11, 16);
@@ -553,13 +678,19 @@ async function taskStocksLate_(db, force) {
   for (const name of items) {
     const key = normName_(name);
     let pick = null;
+    const seen = [];   // ไว้ดูใน Logs ว่าแต่ละเว็บมีผลอะไร (เหมือน Logger.log ในสคริปต์เดิม)
     for (const src of loaded) {
-      const r = src.ok && src.map[key];
-      if (r && r.three && r.date && r.date >= minDate && r.date <= today) { pick = { r, src: src.key }; break; }
+      if (!src.ok) { seen.push(src.key + ' ใช้ไม่ได้ (' + src.error + ')'); continue; }
+      const r = src.map[key];
+      if (!r) { seen.push(src.key + ' ไม่พบชื่อนี้'); continue; }
+      const usable = r.three && r.date && r.date >= minDate && r.date <= today;
+      seen.push(src.key + (r.three ? '=' + r.three : ' รอผล') + ' (' + (r.date || 'ไม่มีวันที่') + ')' +
+        (r.three && r.date && !usable ? ' [วันที่ไม่อยู่ในช่วง ' + minDate + '..' + today + ']' : ''));
+      if (!pick && usable) pick = { r, src: src.key };
     }
-    out.push(pick
+    out.push((pick
       ? (await save_(db, name, pick.r.date, pick.r.three, false)) + ' (จาก ' + pick.src + ')'
-      : name + ': ยังไม่มีผล');
+      : name + ': ยังไม่มีผล') + ' | พบใน: ' + seen.join(', '));
   }
   return out;
 }
