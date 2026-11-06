@@ -326,18 +326,18 @@
     .mobile-header .cal-wrap { display: none !important; }
     .sum-date-pager { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
     body:not(.view-summary) .sum-date-pager { display: none !important; }
-    @media (min-width: 769px) and (max-width: 1366px) {
+    @media (min-width: 600px) and (max-width: 1366px) {
       .date-tabs .lbl-full { display: none; }
       .date-tabs .lbl-short { display: inline; }
       .date-tabs { gap: 6px; }
       .date-tabs .date-btn { padding: 6px 12px; font-size: 0.85em; }
     }
-    @media (min-width: 769px) and (max-width: 900px) {
+    @media (min-width: 600px) and (max-width: 900px) {
       .date-tabs .lbl-short { display: none; }
       .date-tabs .lbl-day { display: inline; }
       .date-tabs .date-btn { min-width: 42px; padding: 6px 10px; }
     }
-    @media (max-width: 768px) {
+    @media (max-width: 599px) {
       #result-count .sum-today-btn { display: none; }   /* มือถือใช้ปุ่ม ▶ กลับวันนี้แทน */
       #content-title .title-date { display: none; }      /* มือถือไม่แสดงวันที่ข้างหัวข้อ (ดูจากปุ่มศรแทน) */
       /* ล็อกแถบเลือกวันที่ให้อยู่ใต้แถบด้านบนตอนเลื่อนจอ */
@@ -363,7 +363,7 @@
     .sum-date-pager .pg-date small { display: block; font-size: 0.75em; font-weight: 400; opacity: 0.9; }
 
     /* วันที่ในหัวข้อสรุป: จอใหญ่ซ่อนไว้ เพราะปุ่มปฏิทินแสดงวันที่อยู่แล้ว */
-    @media (min-width: 769px) {
+    @media (min-width: 600px) {
       /* จอคอม: แถบด้านบน "LT921 + ล่าสุด / สถิติ 7 วัน / สรุป" อยู่บรรทัดเดียวกัน */
       .mobile-header { display: flex; justify-content: flex-start; padding: 0; height: 56px; }
       .mobile-header .brand { width: 240px; text-align: center; font-size: 1.3em; }
@@ -497,8 +497,26 @@
     .arrow-m { display: none; }
     .menu-item.active-cat { background-color: var(--secondary-color); }
 
+    /* แท็บเล็ตจอแคบ (600–900px): ใช้หน้าตาแบบจอคอม แต่ย่อเมนูซ้าย/ปุ่มด้านบนให้พอดีจอ */
+    @media (min-width: 600px) and (max-width: 900px) {
+      .sidebar { width: 170px; }
+      .content { margin-left: 170px; padding: 16px; }
+      .mobile-header .brand { width: 170px; font-size: 1.15em; }
+      .mobile-header .header-actions { margin-left: 10px; }
+      .mobile-header .btn-update { padding: 7px 12px; }
+      .nav-btns { gap: 6px; }
+      .nav-btn { padding: 8px 12px; }
+      .nl-full { display: none; }
+      .sidebar .menu-item { padding-left: 12px; padding-right: 12px; }
+      .tables-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); }
+    }
+    @media (min-width: 600px) and (max-width: 700px) {
+      .date-tabs { gap: 4px; }
+      .date-tabs .date-btn { min-width: 34px; padding: 6px 6px; }
+    }
+
     /* ตกแต่งสไตล์สำหรับหน้าจอมือถือ */
-    @media (max-width: 768px) {
+    @media (max-width: 599px) {
       .mobile-header { 
         display: flex; 
         padding: 0 8px;
@@ -547,6 +565,9 @@
 
       .overlay.active { display: block; }
 
+      /* มือถือ: แถบด้านบนพื้นขาว */
+      .mobile-header { background-color: #ffffff; border-bottom: 1px solid #e8e8e8; }
+
       /* รายการย่อยบนมือถือ: ซ่อนแบบเลื่อนลง แล้วแสดงเป็นแผงด้านขวาแทน */
       .sub-menu { display: none !important; }
       .sidebar .menu-item { padding: 12px 10px; }
@@ -564,6 +585,7 @@
         border-left: 1px solid #e5e5e5;
       }
       .flyout-title {
+        display: none;   /* มือถือ: ไม่แสดงหัวข้อหมวดในแผงรายการย่อย */
         position: sticky; top: 0;
         padding: 10px 12px;
         background-color: var(--primary-color);
@@ -835,7 +857,7 @@
     }
 
     function isMobile() {
-      return window.matchMedia('(max-width: 768px)').matches;
+      return window.matchMedia('(max-width: 599px)').matches;
     }
 
     function hideFlyout() {
